@@ -1,0 +1,12 @@
+docx2txt
+python-dotenv
+
+# Graphiti
+graphiti-core
+
+# LangChain
+unstructured
+langchain_experimental
+langchain_community
+langchain_openai
+langchain_ollama
