@@ -41,7 +41,7 @@ class GraphitiBenchmark:
         self.embedder_api_key = os.environ.get('EMBEDDER_API_KEY')
         self.embedder_base_url = os.environ.get("EMBEDDER_BASE_URL")
         self.embedder_model = os.environ.get('EMBEDDER_MODEL')
-        self.embedding_dim = int(os.environ.get('EMBEDDING_DIM', '1536'))
+        self.embedding_dim = os.environ.get('EMBEDDING_DIM')
 
     def setup_graphiti(self) -> Graphiti:
         """Initialize Graphiti with configured clients."""
