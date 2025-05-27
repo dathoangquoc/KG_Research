@@ -1,0 +1,1 @@
+python3 ../../src/graphiti/benchmark.py -cbs -n 100
