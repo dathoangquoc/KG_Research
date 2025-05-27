@@ -1,6 +1,5 @@
 """Benchmarking script for Graphiti."""
 
-import argparse
 import asyncio
 import json
 import logging
@@ -8,11 +7,10 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
 from tqdm import tqdm
 
 # Graphiti imports
@@ -26,7 +24,10 @@ from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
 
 class GraphitiBenchmark:
     def __init__(self):
-        load_dotenv(dotenv_path='/config/.graphiti_env', override=True)
+        load_dotenv(dotenv_path='../../config/.graphiti_env', override=True)
+
+        # Setup logging
+        self.setup_logging()
         
         # Neo4j configs
         self.neo4j_uri = os.environ.get('NEO4J_URI')
@@ -45,6 +46,16 @@ class GraphitiBenchmark:
         self.embedding_dim = os.environ.get('EMBEDDING_DIM')
 
         self.graphiti = self.setup_graphiti()
+    
+    def setup_logging(self):
+        """Setup logging configuration."""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            filename='debug.log'
+        )
+        self.logger = logging.getLogger(__name__)
+
 
     def setup_graphiti(self) -> Graphiti:
         """Initialize Graphiti with configured clients."""
@@ -74,6 +85,7 @@ class GraphitiBenchmark:
                 base_url=self.llm_base_url
             )
         )
+
         
         return Graphiti(
             uri=self.neo4j_uri,
@@ -104,11 +116,18 @@ class GraphitiBenchmark:
                 context = datapoint["context"]
                 
                 for passage in context:
-                    title = passage[0].encode("utf-8").decode()
-                    text = ""
+                    title = passage[0]
+                    text_parts = []
                     for sen in passage[1]:
-                        text.join(sen).encode("utf-8").decode()
+                        if isinstance(sen, bytes):
+                            sen = sen.decode("utf-8")
+                        text_parts.append(sen)
+                    text = " ".join(text_parts)
+                
+                if not text:
+                    continue
 
+                    
                 episodes.append(
                     {
                         "id": id,
@@ -136,18 +155,16 @@ class GraphitiBenchmark:
             await graphiti.build_indices_and_constraints()
             
             # Add episodes to the graph
-            for i, episode in enumerate(tqdm(episodes.items(), desc="Adding episodes")):
+            for episode in episodes:
                 try:
                     start_time = time.perf_counter()
-                    
                     await graphiti.add_episode(
                         name=episode["title"],
                         episode_body=episode["text"],
                         source=EpisodeType.text,
                         source_description='Text Passage',
                         group_id=episode["id"],
-                        reference_time=datetime.now(timezone.utc),
-                        entity_types=self.entity_types
+                        reference_time=datetime.now(timezone.utc)
                     )
                     
                     end_time = time.perf_counter()
@@ -183,15 +200,17 @@ class GraphitiBenchmark:
             )
         return questions
     
-    async def run_query(self, query: Dict) -> Dict[str, Any]:
+    async def run_query(self, question: Dict) -> Dict[str, Any]:
         try:
             graphiti = self.graphiti
 
             start_time = time.perf_counter()
             # Search for relevant information
+            print(f"Searching for {question["question"]} in {question["id"]}")
+
             search_results = await graphiti.search_(
-                query=query["question"],
-                group_ids=[query["id"]],
+                query=question["question"],
+                group_ids=[question["id"]],
                 config=NODE_HYBRID_SEARCH_RRF
             )
             
@@ -199,27 +218,29 @@ class GraphitiBenchmark:
             execution_time = end_time - start_time
             
             # Extract evidence from search results
-            evidence = [result.name for result in search_results]
+            for result in search_results:
+                print("Search Result:", result)
+            evidence = [result["name"] for result in search_results]
             
             self.logger.info(
-                f"[query] Question: '{query["question"]}', Time: {execution_time:.6f}s, Evidence count: {len(query["ground_truths"])}"
+                f"[query] Question: '{question["question"]}', Time: {execution_time:.6f}s, Evidence count: {len(question["ground_truths"])}"
             )
             
             return {
-                "question": query["question"],
+                "question": question["question"],
                 "answer": "",
                 "evidence": evidence,
-                "ground_truth": query["ground_truths"],
+                "ground_truth": question["ground_truths"],
                 "execution_time": execution_time
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing query '{query.question}': {e}")
+            self.logger.error(f"Error processing question '{question["question"]}': {e}")
             return {
-                "question": query["question"],
+                "question": question["question"],
                 "answer": "",
                 "evidence": [],
-                "ground_truth": query["ground_truths"],
+                "ground_truth": question["ground_truths"],
                 "execution_time": 0.0
             }
     
@@ -239,7 +260,10 @@ class GraphitiBenchmark:
             
             # Process all queries
             print("Processing queries...")
-            tasks = [self.run_query(query["question"]) for query in queries]
+            for query in queries:
+                tasks = []
+                print(query)
+                tasks.append(self.run_query(query))
             
             for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Querying"):
                 result = await task
@@ -256,7 +280,7 @@ class GraphitiBenchmark:
         finally:
             await graphiti.close()
 
-    def compute_scores(self, dataset_name: str, subset: int = 0):
+    def compute_scores(self, dataset_name: str):
         """Compute and display benchmark scores."""
         results_path = f"../../benchmark_results/graphiti_{dataset_name}.json"
         
@@ -284,7 +308,7 @@ class GraphitiBenchmark:
             execution_times.append(answer.get("execution_time", 0.0))
         
         # Print results
-        print(f"\n=== Benchmark Results for {dataset_name} (subset: {subset}) ===")
+        print(f"\n=== Benchmark Results for {dataset_name} ===")
         print(f"Total queries: {len(answers)}")
         print(f"Average retrieval score: {np.mean(retrieval_scores):.4f}")
         print(f"Percentage of queries with perfect retrieval: {np.mean([1 if s == 1.0 else 0 for s in retrieval_scores]):.4f}")
@@ -292,25 +316,13 @@ class GraphitiBenchmark:
         print(f"Total execution time: {np.sum(execution_times):.4f}s")
 
 async def main():
-    parser = argparse.ArgumentParser(description="Graphiti Benchmark CLI")
-    parser.add_argument("-d", "--dataset", default="2wikimultihopqa", help="Dataset to use.")
-    parser.add_argument("-n", type=int, default=0, help="Subset of corpus to use.")
-    parser.add_argument("-c", "--create", action="store_true", help="Create the graph for the given dataset.")
-    parser.add_argument("-b", "--benchmark", action="store_true", help="Benchmark the graph for the given dataset.")
-    parser.add_argument("-s", "--score", action="store_true", help="Report scores after benchmarking.")
-    
-    args = parser.parse_args()
-    
     benchmark = GraphitiBenchmark()
     
-    if args.create:
-        await benchmark.create_graph(args.dataset, args.n)
+    await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=5)
     
-    if args.benchmark:
-        await benchmark.benchmark(args.dataset, args.n)
+    await benchmark.benchmark(dataset_name="2wikimultihopqa", subset=5)
     
-    if args.benchmark or args.score:
-        benchmark.compute_scores(args.dataset, args.n)
+    benchmark.compute_scores(dataset_name="2wikimultihopqa")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+[
+    {
+        "question": "Where was the director of film Ronnie Rocket born?",
+        "answer": "",
+        "evidence": [],
+        "ground_truth": [
+            "Ronnie Rocket",
+            "David Lynch"
+        ],
+        "execution_time": 0.0
+    }
+]
