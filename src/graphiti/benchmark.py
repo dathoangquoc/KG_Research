@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -32,7 +33,6 @@ class GraphitiBenchmark:
         else:
             print(f"No .env file found in '{dotenv_path}'.")
 
-        # Setup logging
         self.setup_logging()
         
         # Neo4j configs
@@ -58,7 +58,7 @@ class GraphitiBenchmark:
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
-            filename='debug.log'
+            filename='./src/graphiti/debug.log'
         )
         self.logger = logging.getLogger(__name__)
 
@@ -207,49 +207,39 @@ class GraphitiBenchmark:
         return questions
     
     async def run_query(self, question: Dict) -> Dict[str, Any]:
-        try:
-            graphiti = self.graphiti
+        graphiti = self.graphiti
 
-            start_time = time.perf_counter()
-            # Search for relevant information
-            print(f"Searching for {question["question"]} in {question["id"]}")
+        start_time = time.perf_counter()
+        # Search for relevant information
+        print(f"Searching for {question["question"]} in {question["id"]}")
 
-            search_results = await graphiti.search_(
-                query=question["question"],
-                group_ids=[question["id"]],
-                config=NODE_HYBRID_SEARCH_RRF
-            )
-            
-            end_time = time.perf_counter()
-            execution_time = end_time - start_time
-            
-            # Extract evidence from search results
-            for result in search_results:
-                print("Search Result:", result)
-            evidence = [result["name"] for result in search_results]
-            
-            self.logger.info(
-                f"[query] Question: '{question["question"]}', Time: {execution_time:.6f}s, Evidence count: {len(question["ground_truths"])}"
-            )
-            
-            return {
-                "question": question["question"],
-                "answer": "",
-                "evidence": evidence,
-                "ground_truth": question["ground_truths"],
-                "execution_time": execution_time
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error processing question[question] '{question["question"]}': {e}")
-            self.logger.error(f"Error processing question '{question}': {e}")
-            return {
-                "question": question["question"],
-                "answer": "",
-                "evidence": [],
-                "ground_truth": question["ground_truths"],
-                "execution_time": 0.0
-            }
+        search_results = await graphiti.search_(
+            query=question["question"],
+            group_ids=[question["id"]],
+            config=NODE_HYBRID_SEARCH_RRF
+        )
+        
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        
+        # Extract evidence from search results
+        evidence = []
+        
+        for result_tuple in search_results:
+            for result in result_tuple[1]:
+                evidence.append(result.name)
+        
+        self.logger.info(
+            f"[query] Question: '{question["question"]}', Time: {execution_time:.6f}s, Evidence count: {len(question["ground_truths"])}"
+        )
+        
+        return {
+            "question": question["question"],
+            "answer": "",
+            "evidence": evidence,
+            "ground_truth": question["ground_truths"],
+            "execution_time": execution_time
+        }
     
 
     async def benchmark(self, dataset_name: str, subset: int = 0):
@@ -267,9 +257,8 @@ class GraphitiBenchmark:
             
             # Process all queries
             print("Processing queries...")
+            tasks = []
             for query in queries:
-                tasks = []
-                print(query)
                 tasks.append(self.run_query(query))
             
             for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Querying"):
@@ -325,11 +314,11 @@ class GraphitiBenchmark:
 async def main():
     benchmark = GraphitiBenchmark()
     
-    await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=5)
+    # await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=5)
     
     await benchmark.benchmark(dataset_name="2wikimultihopqa", subset=5)
     
-    benchmark.compute_scores(dataset_name="2wikimultihopqa")
+    # benchmark.compute_scores(dataset_name="2wikimultihopqa")
 
 
 if __name__ == "__main__":
