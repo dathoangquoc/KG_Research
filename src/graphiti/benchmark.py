@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 import numpy as np
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from tqdm import tqdm
 
 # Graphiti imports
@@ -24,7 +24,13 @@ from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
 
 class GraphitiBenchmark:
     def __init__(self):
-        load_dotenv(dotenv_path='../../config/.graphiti_env', override=True)
+        dotenv_path = "config/.env"
+    
+        if os.path.exists(dotenv_path):
+            print(f"Found .env file at: {dotenv_path}")
+            load_dotenv(dotenv_path, override=True)
+        else:
+            print(f"No .env file found in '{dotenv_path}'.")
 
         # Setup logging
         self.setup_logging()
@@ -98,7 +104,7 @@ class GraphitiBenchmark:
 
     def load_dataset(self, dataset_name: str, subset: int = 0) -> Any:
         """Load a dataset from the datasets folder."""
-        with open(f"../../datasets/{dataset_name}.json", "r") as f:
+        with open(f"datasets/{dataset_name}.json", "r") as f:
             dataset = json.load(f)
         
         if subset:
@@ -235,7 +241,8 @@ class GraphitiBenchmark:
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing question '{question["question"]}': {e}")
+            self.logger.error(f"Error processing question[question] '{question["question"]}': {e}")
+            self.logger.error(f"Error processing question '{question}': {e}")
             return {
                 "question": question["question"],
                 "answer": "",
@@ -270,7 +277,7 @@ class GraphitiBenchmark:
                 results.append(result)
             
             # Save results
-            results_path = f"../../benchmark_results/graphiti_{dataset_name}.json"
+            results_path = f"benchmark_results/graphiti_{dataset_name}.json"
             os.makedirs(os.path.dirname(results_path), exist_ok=True)
             with open(results_path, "w") as f:
                 json.dump(results, f, indent=4)
@@ -282,7 +289,7 @@ class GraphitiBenchmark:
 
     def compute_scores(self, dataset_name: str):
         """Compute and display benchmark scores."""
-        results_path = f"../../benchmark_results/graphiti_{dataset_name}.json"
+        results_path = f"benchmark_results/graphiti_{dataset_name}.json"
         
         try:
             with open(results_path, "r") as f:
