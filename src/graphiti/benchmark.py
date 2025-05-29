@@ -164,8 +164,9 @@ class GraphitiBenchmark:
             await graphiti.build_indices_and_constraints()
             
             # Add episodes to the graph
-            for datapoint in tqdm(datapoints, desc="Adding data points to graph"):
-                for episode in tqdm(datapoint, desc="Adding episodes", leave=False):
+            for i, datapoint in enumerate(datapoints):
+                print(f"Adding Data Point {i}")
+                for episode in tqdm(datapoint, desc="Adding episodes"):
                     try:
                         start_time = time.perf_counter()
                         await graphiti.add_episode(
