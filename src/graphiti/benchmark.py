@@ -15,7 +15,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 from dotenv import load_dotenv, dotenv_values
-from tqdm import tqdm
 
 # Graphiti imports
 from graphiti_core import Graphiti
@@ -119,11 +118,11 @@ class GraphitiBenchmark:
         """Parse the corpus from the dataset into datapoints of episodes."""
         if dataset_name == "2wikimultihopqa":
             datapoints: List[List[Dict[str, str]]] = []
-            episodes = []
             
             for datapoint in dataset:
                 id = datapoint["_id"]
                 context = datapoint["context"]
+                episodes = []
                 
                 for passage in context:
                     title = passage[0]
@@ -164,9 +163,10 @@ class GraphitiBenchmark:
             await graphiti.build_indices_and_constraints()
             
             # Add episodes to the graph
-            for i, datapoint in enumerate(datapoints):
-                print(f"Adding Data Point {i}")
-                for episode in tqdm(datapoint, desc="Adding episodes"):
+            for index, datapoint in enumerate(datapoints):
+                print(f"Adding Data Point {index}/{len(datapoints)}")
+                for i, episode in enumerate(datapoint):
+                    print(f"Adding Episode {i}/{len(datapoint)} in Data Point {index}")
                     try:
                         start_time = time.perf_counter()
                         await graphiti.add_episode(
