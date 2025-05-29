@@ -5,7 +5,10 @@ import json
 import logging
 import os
 import time
+
 import re
+import string
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -102,20 +105,21 @@ class GraphitiBenchmark:
             cross_encoder=cross_encoder
         )
 
-    def load_dataset(self, dataset_name: str, subset: int = 0) -> Any:
+    def load_dataset(self, dataset_name: str, subset: tuple = (0, 0)) -> Any:
         """Load a dataset from the datasets folder."""
         with open(f"datasets/{dataset_name}.json", "r") as f:
             dataset = json.load(f)
         
         if subset:
-            return dataset[:subset]
+            return dataset[subset[0]:subset[1]]
         else:
             return dataset
 
-    def get_episodes(self, dataset: Any, dataset_name: str) -> List[Dict[str, str]]:
-        """Parse the corpus from the dataset into episodes."""
+    def get_episodes(self, dataset: Any, dataset_name: str) -> List[List[Dict[str, str]]]:
+        """Parse the corpus from the dataset into datapoints of episodes."""
         if dataset_name == "2wikimultihopqa":
-            episodes: List[Dict[str, str]] = []
+            datapoints: List[List[Dict[str, str]]] = []
+            episodes = []
             
             for datapoint in dataset:
                 id = datapoint["_id"]
@@ -130,29 +134,28 @@ class GraphitiBenchmark:
                         text_parts.append(sen)
                     text = " ".join(text_parts)
                 
-                if not text:
-                    continue
-
+                    if not text:
+                        continue
                     
-                episodes.append(
-                    {
-                        "id": id,
-                        "title": title,
-                        "text": text
-                    }
-                )
-            
-            return episodes
+                    episodes.append(
+                        {
+                            "id": id,
+                            "title": title,
+                            "text": text
+                        }
+                    )
+                datapoints.append(episodes)
+
+            return datapoints
         else:
             raise NotImplementedError(f"Dataset {dataset_name} not supported.")
 
-    async def create_graph(self, dataset_name: str, subset: int = 0):
+    async def create_graph(self, dataset_name: str, subset: tuple = (0, 0)):
         """Create the knowledge graph from the dataset."""
         print("Loading dataset...")
         dataset = self.load_dataset(dataset_name, subset)
-        episodes = self.get_episodes(dataset, dataset_name)
-        
-        print(f"Dataset loaded. Episodes: {len(episodes)}")
+        datapoints = self.get_episodes(dataset, dataset_name)
+        print(f"Dataset loaded. Data Points: {len(datapoints)}")
         
         graphiti = self.graphiti
         
@@ -161,27 +164,28 @@ class GraphitiBenchmark:
             await graphiti.build_indices_and_constraints()
             
             # Add episodes to the graph
-            for episode in episodes:
-                try:
-                    start_time = time.perf_counter()
-                    await graphiti.add_episode(
-                        name=episode["title"],
-                        episode_body=episode["text"],
-                        source=EpisodeType.text,
-                        source_description='Text Passage',
-                        group_id=episode["id"],
-                        reference_time=datetime.now(timezone.utc)
-                    )
-                    
-                    end_time = time.perf_counter()
-                    execution_time = end_time - start_time
-                    
-                    self.logger.info(
-                        f"[added_episode] Title: {episode["title"]}, Time: {execution_time:.6f}s, Size: {len(episode["text"])},"
-                    )
-                    
-                except Exception as e:
-                    self.logger.error(f"Error adding episode ({episode["title"]}): {e}")
+            for datapoint in tqdm(datapoints, desc="Adding data points to graph"):
+                for episode in tqdm(datapoint, desc="Adding episodes", leave=False):
+                    try:
+                        start_time = time.perf_counter()
+                        await graphiti.add_episode(
+                            name=episode["title"],
+                            episode_body=episode["text"],
+                            source=EpisodeType.text,
+                            source_description='Text Passage',
+                            group_id=episode["id"],
+                            reference_time=datetime.now(timezone.utc)
+                        )
+                        
+                        end_time = time.perf_counter()
+                        execution_time = end_time - start_time
+                        
+                        self.logger.info(
+                            f"[added_episode] Title: {episode['title']}, Time: {execution_time:.6f}s, Size: {len(episode["text"])},"
+                        )
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error adding episode ({episode['title']}): {e}")
 
             print("Graph creation completed!")
             
@@ -242,7 +246,7 @@ class GraphitiBenchmark:
         }
     
 
-    async def benchmark(self, dataset_name: str, subset: int = 0):
+    async def benchmark(self, dataset_name: str, subset: tuple = (0, 0)):
         """Benchmark the knowledge graph on queries."""
         print("Loading dataset...")
         dataset = self.load_dataset(dataset_name, subset)
@@ -276,6 +280,21 @@ class GraphitiBenchmark:
         finally:
             await graphiti.close()
 
+    def normalize_answer(self, answer: str):
+        # Lower
+        answer = answer.lower()
+        
+        # Remove punctuation
+        exclude = set(string.punctuation)
+        answer =  ''.join(ch for ch in answer if ch not in exclude)
+        
+        # Remove articles (a, an, the)
+        answer = re.sub(r'\b(a|an|the)\b', ' ', answer)
+
+        # Remove whitespace
+        return ' '.join(answer.split())
+
+
     def compute_scores(self, dataset_name: str):
         """Compute and display benchmark scores."""
         results_path = f"benchmark_results/graphiti_{dataset_name}.json"
@@ -292,8 +311,8 @@ class GraphitiBenchmark:
         execution_times: List[float] = []
         
         for answer in answers:
-            ground_truth = answer["ground_truth"]
-            predicted_evidence = answer["evidence"]
+            ground_truth = [self.normalize_answer(truth) for truth in answer["ground_truth"]]
+            predicted_evidence = [self.normalize_answer(evidence) for evidence in answer["evidence"]]
             
             if ground_truth:  # Avoid division by zero
                 p_retrieved = len(set(ground_truth).intersection(set(predicted_evidence))) / len(set(ground_truth))
@@ -314,11 +333,11 @@ class GraphitiBenchmark:
 async def main():
     benchmark = GraphitiBenchmark()
     
-    # await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=5)
+    await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=(0, 10))
     
-    await benchmark.benchmark(dataset_name="2wikimultihopqa", subset=5)
+    await benchmark.benchmark(dataset_name="2wikimultihopqa", subset=(0, 10))
     
-    # benchmark.compute_scores(dataset_name="2wikimultihopqa")
+    benchmark.compute_scores(dataset_name="2wikimultihopqa")
 
 
 if __name__ == "__main__":
