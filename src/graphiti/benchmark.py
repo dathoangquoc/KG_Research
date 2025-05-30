@@ -266,7 +266,7 @@ class GraphitiBenchmark:
             for query in queries:
                 tasks.append(self.run_query(query))
             
-            for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Querying"):
+            for task in tasks:
                 result = await task
                 results.append(result)
             
@@ -330,17 +330,3 @@ class GraphitiBenchmark:
         print(f"Percentage of queries with perfect retrieval: {np.mean([1 if s == 1.0 else 0 for s in retrieval_scores]):.4f}")
         print(f"Average execution time: {np.mean(execution_times):.4f}s")
         print(f"Total execution time: {np.sum(execution_times):.4f}s")
-
-async def main():
-    benchmark = GraphitiBenchmark()
-    
-    # Graph done to 1, next time start from 2
-    await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=(0, 10))
-    
-    await benchmark.benchmark(dataset_name="2wikimultihopqa", subset=(0, 10))
-    
-    benchmark.compute_scores(dataset_name="2wikimultihopqa")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
