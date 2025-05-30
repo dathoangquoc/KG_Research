@@ -334,6 +334,7 @@ class GraphitiBenchmark:
 async def main():
     benchmark = GraphitiBenchmark()
     
+    # Graph done to 1, next time start from 2
     await benchmark.create_graph(dataset_name="2wikimultihopqa", subset=(0, 10))
     
     await benchmark.benchmark(dataset_name="2wikimultihopqa", subset=(0, 10))
