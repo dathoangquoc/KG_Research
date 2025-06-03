@@ -1,6 +1,5 @@
 """Benchmarking script for Graphiti."""
 
-import asyncio
 import json
 import logging
 import os
@@ -9,7 +8,6 @@ import time
 import re
 import string
 
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -24,35 +22,10 @@ from graphiti_core.llm_client import LLMConfig
 from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.cross_encoder import OpenAIRerankerClient
 from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
+from graphiti import setup_graphiti
 
 class GraphitiBenchmark:
     def __init__(self):
-        dotenv_path = "config/.env"
-    
-        if os.path.exists(dotenv_path):
-            print(f"Found .env file at: {dotenv_path}")
-            load_dotenv(dotenv_path, override=True)
-        else:
-            print(f"No .env file found in '{dotenv_path}'.")
-
-        self.setup_logging()
-        
-        # Neo4j configs
-        self.neo4j_uri = os.environ.get('NEO4J_URI')
-        self.neo4j_user = os.environ.get('NEO4J_USER')
-        self.neo4j_password = os.environ.get('NEO4J_PASSWORD')
-        
-        # LLM configs
-        self.llm_api_key = os.environ.get('LLM_API_KEY')
-        self.llm_base_url = os.environ.get('LLM_BASE_URL')
-        self.llm_model = os.environ.get('LLM_MODEL')
-        
-        # Embedder configs
-        self.embedder_api_key = os.environ.get('EMBEDDER_API_KEY')
-        self.embedder_base_url = os.environ.get("EMBEDDER_BASE_URL")
-        self.embedder_model = os.environ.get('EMBEDDER_MODEL')
-        self.embedding_dim = os.environ.get('EMBEDDING_DIM')
-
         self.graphiti = self.setup_graphiti()
     
     def setup_logging(self):
@@ -63,46 +36,6 @@ class GraphitiBenchmark:
             filename='./src/graphiti/debug.log'
         )
         self.logger = logging.getLogger(__name__)
-
-
-    def setup_graphiti(self) -> Graphiti:
-        """Initialize Graphiti with configured clients."""
-        llm_client = OpenAIClient(
-            config=LLMConfig(
-                model=self.llm_model,
-                api_key=self.llm_api_key,
-                base_url=self.llm_base_url,
-                small_model=self.llm_model,
-                max_tokens=8000
-            )
-        )
-        
-        embedder = OpenAIEmbedder(
-            config=OpenAIEmbedderConfig(
-                embedding_model=self.embedder_model,
-                embedding_dim=self.embedding_dim,
-                api_key=self.embedder_api_key,
-                base_url=self.embedder_base_url
-            )
-        )
-        
-        cross_encoder = OpenAIRerankerClient(
-            config=LLMConfig(
-                model=self.llm_model,
-                api_key=self.llm_api_key,
-                base_url=self.llm_base_url
-            )
-        )
-
-        
-        return Graphiti(
-            uri=self.neo4j_uri,
-            user=self.neo4j_user,
-            password=self.neo4j_password,
-            llm_client=llm_client,
-            embedder=embedder,
-            cross_encoder=cross_encoder
-        )
 
     def load_dataset(self, dataset_name: str, subset: tuple = (0, 0)) -> Any:
         """Load a dataset from the datasets folder."""
