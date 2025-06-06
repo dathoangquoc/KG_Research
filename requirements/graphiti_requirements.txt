@@ -1,9 +1,16 @@
-docx2txt
 python-dotenv
 numpy
 
 # Graphiti
 graphiti-core
+
+# Langchain
+langchain_community
+langchain_ollama
+langchain_experimental
+
+# Gradio
+gradio
 
 # MCP
 mcp[cli]
