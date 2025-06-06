@@ -40,7 +40,7 @@ class GraphitiServer():
         
         results = await self.graphiti.search(
             query=query,
-            group_ids=["0"],  # TODO: Try groupless search
+            group_ids=["0"],
             num_results=5
         )
 
