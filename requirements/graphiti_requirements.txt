@@ -12,5 +12,8 @@ langchain_experimental
 # Gradio
 gradio
 
+# mcp-use
+mcp-use
+
 # MCP
 mcp[cli]

@@ -1,28 +1,16 @@
 """MCP Server for Graphiti"""
 
-import asyncio
-import json
-import logging
-import os
-import time
-import re
-import string
-
-from dotenv import load_dotenv
-from datetime import datetime, timezone
-from typing import Any, Dict, List
-
 # MCP imports
 from mcp.server.fastmcp import FastMCP
 
-# Graphiti imports
-from graphiti_core import Graphiti
-from graphiti_core.nodes import EpisodeType
-from graphiti_core.llm_client.openai_client import OpenAIClient
-from graphiti_core.llm_client import LLMConfig
-from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
-from graphiti_core.cross_encoder import OpenAIRerankerClient
-from graphiti import setup_graphiti
+# Fix path for direct script execution
+import sys
+import os
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+# Now use absolute import
+from src.graphiti.setup_graphiti import setup_graphiti
 
 mcp = FastMCP()
 
@@ -47,4 +35,10 @@ class GraphitiServer():
         # Format facts into readable string
         facts = [result.fact for result in results]
         return "\n".join(facts)
-        
+
+# Add a server instance and entry point
+server = GraphitiServer()
+
+# Run the MCP server when executed directly
+if __name__ == "__main__":
+    mcp.run(transport='stdio')

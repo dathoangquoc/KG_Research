@@ -1,15 +1,8 @@
 """Document processing utilities"""
 
-import os
-import shutil
-from datetime import datetime
-import traceback
-
+# Langchain
 from langchain_community.document_loaders.word_document import Docx2txtLoader
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
-
-from graphiti_core.nodes import EpisodeType
-from .setup_graphiti import setup_graphiti
 
 CHUNK_SIZE=100
 CHUNK_OVERLAP=20
