@@ -5,22 +5,15 @@ from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-import json
+import sys
+from ollama import chat as ollama_chat
 
-class GraphitiChatbot:
+class MCPClient:
     def __init__(self):
-        # Initialize session and client objects
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
-    
-    async def connect_to_server(self, server_script_path: str):
-        """Connect to an MCP server
 
-        Args:
-            server_script_path: Path to the server script (.py or .js)
-        """
+    async def connect_to_server(self, server_script_path: str):
         is_python = server_script_path.endswith('.py')
         is_js = server_script_path.endswith('.js')
         if not (is_python or is_js):
@@ -45,114 +38,98 @@ class GraphitiChatbot:
         print("\nConnected to server with tools:", [tool.name for tool in tools])
 
     async def process_query(self, query: str) -> str:
-        """Process a query using LangChain-Ollama and available tools"""
-        
-        # Initialize Ollama chat model
-        llm = ChatOllama(
-            model="qwen3:1.7b",  # or your preferred model
-            temperature=0.7,
+        messages = [{"role": "user", "content": query}]
+        final_response = []
+
+        # Get tools from the MCP server
+        tool_response = await self.session.list_tools()
+        tools = tool_response.tools
+
+        # Convert MCP tools to Ollama-compatible tool definitions
+        ollama_tools = []
+        for tool in tools:
+            ollama_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.inputSchema
+                }
+            })
+
+        # First call to Ollama
+        response = ollama_chat(
+            model="qwen3:1.7b",  # Or your preferred model
+            messages=messages,
+            tools=ollama_tools,
         )
-        
-        # Get available tools
-        response = await self.session.list_tools()
-        available_tools = [{
-            "name": tool.name,
-            "description": tool.description,
-            "input_schema": tool.inputSchema
-        } for tool in response.tools]
 
-        # Create tools description for the model
-        tools_description = "\n".join([
-            f"- {tool['name']}: {tool['description']}"
-            for tool in available_tools
-        ])
-        
-        # Enhanced system prompt for tool usage
-        system_prompt = f"""You are an AI assistant with access to the following tools:
+        content = response['message'].get('content')
+        if content:
+            final_response.append(content)
 
-{tools_description}
+        # Handle tool calls (if any)
+        tool_calls = response['message'].get('tool_calls', [])
+        for call in tool_calls:
+            tool_name = call['function']['name']
+            tool_args = json.loads(call['function']['arguments'])
 
-When you need to use a tool, respond with a JSON object in this exact format:
-{{"tool_call": {{"name": "tool_name", "args": {{"param": "value"}}}}}}
+            # Execute tool
+            result = await self.session.call_tool(tool_name, tool_args)
 
-If you don't need to use any tools, respond normally with text.
+            # Append tool result to messages and re-query Ollama
+            messages.append({
+                "role": "assistant",
+                "tool_call_id": call['id'],
+                "content": None,
+                "tool_calls": [call]
+            })
 
-Available tools and their schemas:
-{json.dumps(available_tools, indent=2)}
-"""
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call['id'],
+                "name": tool_name,
+                "content": result.content
+            })
 
-        # Initialize messages
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=query)
-        ]
+            # Follow-up query with tool result
+            response = ollama_chat(
+                model="llama3.1",
+                messages=messages,
+            )
 
-        # Initial call to Ollama
-        response = await llm.ainvoke(messages)
-        response_text = response.content
+            final_response.append(response['message'].get('content', ''))
 
-        # Process response and handle tool calls
-        final_text = []
-        
-        # Check if response contains a tool call
-        try:
-            # Try to parse as JSON for tool calls
-            if response_text.strip().startswith('{"tool_call"'):
-                tool_call_data = json.loads(response_text)
-                tool_name = tool_call_data["tool_call"]["name"]
-                tool_args = tool_call_data["tool_call"]["args"]
-                
-                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
-                
-                # Execute tool call
-                result = await self.session.call_tool(tool_name, tool_args)
-                
-                # Add tool result to conversation
-                messages.append(AIMessage(content=response_text))
-                messages.append(HumanMessage(content=f"Tool result: {result.content}"))
-                
-                # Get follow-up response from Ollama
-                follow_up_response = await llm.ainvoke(messages)
-                final_text.append(follow_up_response.content)
-                
-            else:
-                # Regular text response, no tool call
-                final_text.append(response_text)
-                
-        except json.JSONDecodeError:
-            # If not valid JSON, treat as regular text response
-            final_text.append(response_text)
-        except KeyError:
-            # If JSON doesn't have expected structure, treat as regular text
-            final_text.append(response_text)
+        return "\n".join(final_response)
 
-        return "\n".join(final_text)
+    async def chat_loop(self):
+        print("\nMCP Client Started!")
+        print("Type your queries or 'quit' to exit.")
+
+        while True:
+            try:
+                query = input("\nQuery: ").strip()
+                if query.lower() == 'quit':
+                    break
+                response = await self.process_query(query)
+                print("\n" + response)
+            except Exception as e:
+                print(f"\nError: {str(e)}")
 
     async def cleanup(self):
-        """Clean up resources"""
         await self.exit_stack.aclose()
 
-# Example usage
 async def main():
-    chatbot = GraphitiChatbot()
-    
+    if len(sys.argv) < 2:
+        print("Usage: python client.py <path_to_server_script>")
+        sys.exit(1)
+
+    client = MCPClient()
     try:
-        # Connect to your MCP server
-        await chatbot.connect_to_server("path/to/your/server.py")
-        
-        # Process queries
-        while True:
-            user_input = input("\nEnter your query (or 'quit' to exit): ")
-            if user_input.lower() == 'quit':
-                break
-                
-            response = await chatbot.process_query(user_input)
-            print(f"\nResponse: {response}")
-            
-    except KeyboardInterrupt:
-        print("\nExiting...")
+        await client.connect_to_server(sys.argv[1])
+        await client.chat_loop()
     finally:
-        await chatbot.cleanup()
+        await client.cleanup()
 
 if __name__ == "__main__":
     asyncio.run(main())
