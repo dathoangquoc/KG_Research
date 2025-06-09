@@ -2,12 +2,10 @@ import os
 from dotenv import load_dotenv
 
 from graphiti_core import Graphiti
-from graphiti_core.nodes import EpisodeType
 from graphiti_core.llm_client.openai_client import OpenAIClient
 from graphiti_core.llm_client import LLMConfig
 from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.cross_encoder import OpenAIRerankerClient
-from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
 
 def setup_graphiti(dotenv_path: str = "config/.env") -> Graphiti:
     """Initialize Graphiti with configured clients."""
