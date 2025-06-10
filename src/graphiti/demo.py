@@ -6,6 +6,7 @@ import shutil
 import os
 import traceback
 import logging
+import asyncio
 
 # Graphiti
 from graphiti_core.nodes import EpisodeType
@@ -20,6 +21,7 @@ from .mcp_server import GraphitiServer
 from .chatbot import GraphitiChatbot
 
 logger = logging.getLogger(__name__).setLevel(logging.CRITICAL)
+server_script_path = './src/graphiti/mcp_server.py'
 
 class GraphitiDemo:
     def __init__(self):
@@ -27,10 +29,6 @@ class GraphitiDemo:
         self.document_processor = DocumentProcessor()
         self.graphiti_server = GraphitiServer()
         self.chatbot = GraphitiChatbot()
-
-    async def startup(self):
-        """Run this before launching the Gradio app to initialize connections"""
-        await self.chatbot.connect_to_server("./src/graphiti/mcp_server.py")        
 
     async def process_file_upload(self, fileobj):
         """Process file upload from Gradio interface and add to the knowledge graph"""
@@ -79,4 +77,8 @@ class GraphitiDemo:
             traceback.print_exc()
             return f"Error ingesting episodes: {e}"
         return f"Successfully ingested {file_name}"
-    
+
+    async def ask(self, query):
+        await self.chatbot.connect_to_server(server_script_path)
+        response = await self.chatbot.process_query(query)
+        return response

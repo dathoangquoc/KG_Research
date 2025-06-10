@@ -1,45 +1,18 @@
 import asyncio
 import gradio as gr
-from src.graphiti.chatbot import GraphitiChatbot
+from src.graphiti.demo import GraphitiDemo 
 
-async def chat_loop(user_query):
-    """
-    Connects to the Graphiti chatbot server and allows for continuous
-    interaction with a user query.
-    """
-    chatbot = GraphitiChatbot()
-    server_script_path = './src/graphiti/mcp_server.py'
-
-    # Step 1: Connect to the server
-    try:
-        await chatbot.connect_to_server(server_script_path)
-    except Exception as e:
-        return f"Failed to connect to the server: {e}"
-
-    # Step 2: Process the query
-    try:
-        response = await chatbot.process_query(user_query)
-        return response
-    except Exception as e:
-        return f"Error processing query: {e}"
+demo = GraphitiDemo()
 
 # Gradio interface function that wraps the async call
 def gradio_chat(user_query):
-    response = asyncio.run(chat_loop(user_query))
+    response = asyncio.run(demo.ask(user_query))
     return response
 
 # Function to handle file uploads
-def process_file(file):
-    """
-    Processes an uploaded file.
-    """
-    if file is None:
-        return "No file was uploaded."
-    
-    
-    file_path = file.name
-    # Add your file processing logic here
-    return f"Received file: {file_path}\nFile has been processed successfully."
+def process_file(fileobj):
+    response = asyncio.run(demo.process_file_upload(fileobj))
+    return response
 
 # Create the chat interface
 chat_interface = gr.Interface(

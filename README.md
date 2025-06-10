@@ -30,7 +30,10 @@ Dependencies:
 Neo4j Database:
 - You can connect to instance of AuraDB or host a local one using Docker with `scripts/start_neo4j.sh`
 
-Run the benchmark `python3 main.py`
+Run the benchmark `python3 benchmark.py`
+
+## How to run the demo
+`python3 app.py`
 
 ## Environment Variables
 
