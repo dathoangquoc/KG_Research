@@ -1,18 +1,28 @@
 import asyncio
+
 import gradio as gr
 from src.graphiti.demo import GraphitiDemo 
 
 demo = GraphitiDemo()
 
-# Gradio interface function that wraps the async call
-def gradio_chat(user_query):
-    response = asyncio.run(demo.ask(user_query))
-    return response
-
 # Function to handle file uploads
 def process_file(fileobj):
-    response = asyncio.run(demo.process_file_upload(fileobj))
-    return response
+    # Create a new event loop instead of trying to get the current one
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Run the async function and get the result
+    result = loop.run_until_complete(demo.process_file_upload(fileobj))
+    loop.close()
+    return result
+
+# Similar fix for the chat function
+def gradio_chat(user_query):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(demo.ask(user_query))
+    loop.close()
+    return result
 
 # Create the chat interface
 chat_interface = gr.Interface(
