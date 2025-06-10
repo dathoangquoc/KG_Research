@@ -17,7 +17,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('debug.log'),
-        logging.StreamHandler()  # Also log to console
     ]
 )
 logger = logging.getLogger(__name__)
@@ -37,7 +36,8 @@ class GraphitiChatbot:
         # Configure OpenAI client properly
         self.client = openai.OpenAI(
             api_key=llm_api_key,
-            base_url=llm_base_url
+            base_url=llm_base_url,
+            timeout=150
         )
         logger.info("Initialized GraphitiChatbot")
         
@@ -104,7 +104,7 @@ class GraphitiChatbot:
                 model=llm_model,
                 messages=messages,
                 tools=available_tools if available_tools else None,
-                max_tokens=1000
+                max_tokens=500
             )
 
             logger.debug(f"Got response: {response}")
@@ -156,7 +156,7 @@ class GraphitiChatbot:
             final_response = self.client.chat.completions.create(
                 model=llm_model,
                 messages=messages,
-                max_tokens=1000
+                max_tokens=6000
             )
 
             final_content = final_response.choices[0].message.content or "No final response generated"

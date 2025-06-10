@@ -1,4 +1,4 @@
-"""Main Gradio application with chatbot and document upload"""
+# Main application with chatbot and document upload
 
 # Python libraries 
 from datetime import datetime
@@ -19,10 +19,7 @@ from .document_processor import DocumentProcessor
 from .mcp_server import GraphitiServer
 from .chatbot import GraphitiChatbot
 
-# Gradio
-import gradio as gr
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__).setLevel(logging.CRITICAL)
 
 class GraphitiDemo:
     def __init__(self):
@@ -33,18 +30,7 @@ class GraphitiDemo:
 
     async def startup(self):
         """Run this before launching the Gradio app to initialize connections"""
-        await self.chatbot.connect_to_server("./src/graphiti/mcp_server.py")
-
-    async def chatbot_respond(self, user_msg, chat_history):
-        """Handle chatbot interaction from UI"""
-        try:
-            if user_msg.lower() == 'quit':
-                return chat_history + [[user_msg, "Goodbye!"]]
-            response = await self.chatbot.process_query(user_msg)
-            return chat_history + [[user_msg, response]]
-        except Exception as e:
-            print("Error in chatbot response:", e)
-            return chat_history + [[user_msg, f"Error: {str(e)}"]]
+        await self.chatbot.connect_to_server("./src/graphiti/mcp_server.py")        
 
     async def process_file_upload(self, fileobj):
         """Process file upload from Gradio interface and add to the knowledge graph"""
@@ -94,52 +80,3 @@ class GraphitiDemo:
             return f"Error ingesting episodes: {e}"
         return f"Successfully ingested {file_name}"
     
-    def create_gradio_interface(self):
-        with gr.Blocks(title="Graphiti Knowledge Graph Demo", theme=gr.themes.Soft()) as interface:
-            gr.Markdown("# 🧠 Graphiti Knowledge Graph Demo")
-            gr.Markdown("Upload documents to add them to the knowledge graph for processing and analysis.")
-            
-            with gr.Row():
-                with gr.Column(scale=2):
-                    file_input = gr.File(label="Upload Document", file_types=[".docx", ".txt", ".pdf"], type="filepath")
-                    upload_btn = gr.Button("Process Document", variant="primary", size="lg")
-                with gr.Column(scale=3):
-                    log_output = gr.Textbox(label="Processing Log", value="", interactive=False, lines=2)
-
-            upload_btn.click(
-                fn=self.process_file_upload,
-                inputs=[file_input],
-                outputs=[log_output]
-            )
-            file_input.change(
-                fn=lambda x: ("File selected: " + os.path.basename(x.name) if x else "No file selected", ""),
-                inputs=[file_input],
-                outputs=[log_output]
-            )
-
-            gr.Markdown("---")
-            gr.Markdown("### 💬 Ask the Chatbot (integrated with Ollama + Graphiti)")
-            
-            with gr.Column():
-                chatbot_ui = gr.Chatbot(height=400, type='messages')
-                user_input = gr.Textbox(
-                    label="Ask something...", 
-                    placeholder="Type your message here...",
-                    lines=1
-                )
-                
-                # Handle user input submission
-                user_input.submit(
-                    fn=self.chatbot_respond,
-                    inputs=[user_input, chatbot_ui],
-                    outputs=[chatbot_ui],
-                    queue=True
-                ).then(
-                    fn=lambda: "",  # Clear input after submission
-                    inputs=[],
-                    outputs=[user_input]
-                )
-
-            gr.Markdown("**Note:** Chatbot uses local Ollama + optionally queries Graphiti for factual search.")
-
-        return interface
