@@ -1,135 +1,168 @@
+import os
 import asyncio
+import json
 from typing import Optional
 from contextlib import AsyncExitStack
+import logging
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession, StdioServerParameters  
 from mcp.client.stdio import stdio_client
 
-import sys
-from ollama import chat as ollama_chat
+from dotenv import load_dotenv
+import openai
 
-class MCPClient:
+# Configure logging properly
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('debug.log'),
+        logging.StreamHandler()  # Also log to console
+    ]
+)
+logger = logging.getLogger(__name__)
+
+load_dotenv("config/.env", override=True)
+
+# LLM configs
+llm_api_key = os.environ.get('LLM_API_KEY')
+llm_base_url = os.environ.get('LLM_BASE_URL') 
+llm_model = os.environ.get('LLM_MODEL')
+
+class GraphitiChatbot:
     def __init__(self):
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
 
+        # Configure OpenAI client properly
+        self.client = openai.OpenAI(
+            api_key=llm_api_key,
+            base_url=llm_base_url
+        )
+        logger.info("Initialized GraphitiChatbot")
+        
     async def connect_to_server(self, server_script_path: str):
-        is_python = server_script_path.endswith('.py')
-        is_js = server_script_path.endswith('.js')
-        if not (is_python or is_js):
-            raise ValueError("Server script must be a .py or .js file")
+        """Connect to an MCP server from a Python or JS script."""
+        try:
+            logger.info(f"Connecting to server: {server_script_path}")
+            
+            if server_script_path.endswith('.py'):
+                command = 'python'
+            elif server_script_path.endswith('.js'):
+                command = 'node'
+            else:
+                raise ValueError("Server script must end with .py or .js")
 
-        command = "python" if is_python else "node"
-        server_params = StdioServerParameters(
-            command=command,
-            args=[server_script_path],
-            env=None
-        )
+            server_params = StdioServerParameters(command=command, args=[server_script_path])
 
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+            self.stdio, self.write = await self.exit_stack.enter_async_context(
+                stdio_client(server_params)
+            )
+            self.session = await self.exit_stack.enter_async_context(
+                ClientSession(self.stdio, self.write)
+            )
+            await self.session.initialize()
 
-        await self.session.initialize()
+            tools = (await self.session.list_tools()).tools
+            logger.info(f"Connected to server with tools: {[tool.name for tool in tools]}")
+            
+        except Exception as e:
+            logger.error(f"Failed to connect to server: {e}")
+            raise
 
-        # List available tools
-        response = await self.session.list_tools()
-        tools = response.tools
-        print("\nConnected to server with tools:", [tool.name for tool in tools])
-
-    async def process_query(self, query: str) -> str:
-        messages = [{"role": "user", "content": query}]
-        final_response = []
-
-        # Get tools from the MCP server
-        tool_response = await self.session.list_tools()
-        tools = tool_response.tools
-
-        # Convert MCP tools to Ollama-compatible tool definitions
-        ollama_tools = []
-        for tool in tools:
-            ollama_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.inputSchema
+    async def process_query(self, query: str):
+        """Process a query with OpenAI-compatible API and available tools"""
+        try:
+            logger.info(f"Processing query: {query}")
+            
+            messages = [
+                {
+                    "role": "user", 
+                    "content": query
                 }
-            })
+            ]
 
-        # First call to Ollama
-        response = ollama_chat(
-            model="qwen3:1.7b",  # Or your preferred model
-            messages=messages,
-            tools=ollama_tools,
-        )
+            # Get available tools if session exists
+            available_tools = []
+            if self.session:
+                try:
+                    resources = await self.session.list_tools()
+                    available_tools = [{
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.inputSchema
+                        }
+                    } for tool in resources.tools]
+                    logger.debug(f"Available tools: {[tool['function']['name'] for tool in available_tools]}")
+                except Exception as e:
+                    logger.warning(f"Could not get tools: {e}")
 
-        content = response['message'].get('content')
-        if content:
-            final_response.append(content)
-
-        # Handle tool calls (if any)
-        tool_calls = response['message'].get('tool_calls', [])
-        for call in tool_calls:
-            tool_name = call['function']['name']
-            tool_args = json.loads(call['function']['arguments'])
-
-            # Execute tool
-            result = await self.session.call_tool(tool_name, tool_args)
-
-            # Append tool result to messages and re-query Ollama
-            messages.append({
-                "role": "assistant",
-                "tool_call_id": call['id'],
-                "content": None,
-                "tool_calls": [call]
-            })
-
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call['id'],
-                "name": tool_name,
-                "content": result.content
-            })
-
-            # Follow-up query with tool result
-            response = ollama_chat(
-                model="llama3.1",
+            # Make initial API call
+            response = self.client.chat.completions.create(
+                model=llm_model,
                 messages=messages,
+                tools=available_tools if available_tools else None,
+                max_tokens=1000
             )
 
-            final_response.append(response['message'].get('content', ''))
+            logger.debug(f"Got response: {response}")
 
-        return "\n".join(final_response)
+            # Handle response
+            message = response.choices[0].message
+            
+            # If no tool calls, return the content directly
+            if not message.tool_calls:
+                content = message.content or "No response generated"
+                logger.info(f"Returning direct response: {content[:100]}...")
+                return content
 
-    async def chat_loop(self):
-        print("\nMCP Client Started!")
-        print("Type your queries or 'quit' to exit.")
+            # Handle tool calls
+            messages.append(message)
+            
+            for tool_call in message.tool_calls:
+                try:
+                    tool_name = tool_call.function.name
+                    tool_args = json.loads(tool_call.function.arguments)
+                    
+                    logger.info(f"Calling tool {tool_name} with args {tool_args}")
+                    
+                    # Execute tool call via MCP
+                    if self.session:
+                        result = await self.session.call_tool(tool_name, tool_args)
+                        tool_response = str(result.content) if hasattr(result, 'content') else str(result)
+                    else:
+                        tool_response = f"Tool {tool_name} not available - no MCP session"
+                    
+                    # Add tool response to messages
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": tool_response
+                    })
+                    
+                    logger.debug(f"Tool {tool_name} returned: {tool_response[:200]}...")
+                    
+                except Exception as e:
+                    logger.error(f"Error calling tool {tool_name}: {e}")
+                    messages.append({
+                        "role": "tool", 
+                        "tool_call_id": tool_call.id,
+                        "content": f"Error: {str(e)}"
+                    })
 
-        while True:
-            try:
-                query = input("\nQuery: ").strip()
-                if query.lower() == 'quit':
-                    break
-                response = await self.process_query(query)
-                print("\n" + response)
-            except Exception as e:
-                print(f"\nError: {str(e)}")
+            # Get final response with tool results
+            final_response = self.client.chat.completions.create(
+                model=llm_model,
+                messages=messages,
+                max_tokens=1000
+            )
 
-    async def cleanup(self):
-        await self.exit_stack.aclose()
+            final_content = final_response.choices[0].message.content or "No final response generated"
+            logger.info(f"Returning final response: {final_content[:100]}...")
+            return final_content
 
-async def main():
-    if len(sys.argv) < 2:
-        print("Usage: python client.py <path_to_server_script>")
-        sys.exit(1)
-
-    client = MCPClient()
-    try:
-        await client.connect_to_server(sys.argv[1])
-        await client.chat_loop()
-    finally:
-        await client.cleanup()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        except Exception as e:
+            logger.error(f"Error processing query: {e}", exc_info=True)
+            return f"Error processing query: {str(e)}"

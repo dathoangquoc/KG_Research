@@ -5,6 +5,7 @@ from datetime import datetime
 import shutil
 import os
 import traceback
+import logging
 
 # Graphiti
 from graphiti_core.nodes import EpisodeType
@@ -21,6 +22,7 @@ from .chatbot import GraphitiChatbot
 # Gradio
 import gradio as gr
 
+logger = logging.getLogger(__name__)
 
 class GraphitiDemo:
     def __init__(self):
@@ -119,7 +121,7 @@ class GraphitiDemo:
             gr.Markdown("### 💬 Ask the Chatbot (integrated with Ollama + Graphiti)")
             
             with gr.Column():
-                chatbot_ui = gr.Chatbot(height=400)
+                chatbot_ui = gr.Chatbot(height=400, type='messages')
                 user_input = gr.Textbox(
                     label="Ask something...", 
                     placeholder="Type your message here...",
