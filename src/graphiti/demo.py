@@ -1,26 +1,34 @@
-"""Main Gradio application with chatbot and document upload"""
+# Main application with chatbot and document upload
 
 # Python libraries 
 from datetime import datetime
 import shutil
 import os
 import traceback
+import logging
+import asyncio
 
 # Graphiti
 from graphiti_core.nodes import EpisodeType
 from .setup_graphiti import setup_graphiti
 
+# Ollama
+import ollama
+
 # Custom modules
 from .document_processor import DocumentProcessor
+from .mcp_server import GraphitiServer
+from .chatbot import GraphitiChatbot
 
-# Gradio
-import gradio as gr
-
+logger = logging.getLogger(__name__).setLevel(logging.CRITICAL)
+server_script_path = './src/graphiti/mcp_server.py'
 
 class GraphitiDemo:
     def __init__(self):
         self.graphiti = setup_graphiti()
         self.document_processor = DocumentProcessor()
+        self.graphiti_server = GraphitiServer()
+        self.chatbot = GraphitiChatbot()
 
     async def process_file_upload(self, fileobj):
         """Process file upload from Gradio interface and add to the knowledge graph"""
@@ -69,50 +77,8 @@ class GraphitiDemo:
             traceback.print_exc()
             return f"Error ingesting episodes: {e}"
         return f"Successfully ingested {file_name}"
-    
-    def create_gradio_interface(self):
-        with gr.Blocks(title="Graphiti Knowledge Graph Demo", theme=gr.themes.Soft()) as interface:    
-            gr.Markdown("# 🧠 Graphiti Knowledge Graph Demo")
-            gr.Markdown("Upload documents to add them to the knowledge graph for processing and analysis.")
-            
-            with gr.Row():
-                with gr.Column(scale=2):
-                    # File upload component
-                    file_input = gr.File(
-                        label="Upload Document",
-                        file_types=[".docx", ".txt", ".pdf"],
-                        type="filepath"
-                    )
-                    
-                    # Upload button
-                    upload_btn = gr.Button("Process Document", variant="primary", size="lg")
-                    
-                with gr.Column(scale=3):                 
-                    # Processing log
-                    log_output = gr.Textbox(
-                        label="Processing Log",
-                        value="",
-                        interactive=False,
-                        lines=2
-                    )
-            
-            # Event handlers
-            upload_btn.click(
-                fn=self.process_file_upload,
-                inputs=[file_input],
-                outputs=[log_output]
-            )
-            
-            # Also trigger on file change for immediate feedback
-            file_input.change(
-                fn=lambda x: ("File selected: " + os.path.basename(x.name) if x else "No file selected", ""),
-                inputs=[file_input],
-                outputs=[log_output]
-            )
-            
-            gr.Markdown("---")
-            gr.Markdown("**Supported file types:** DOCX, TXT, PDF")
-            gr.Markdown("**Note:** Large files may take several minutes to process.")
-        
-        return interface
-            
+
+    async def ask(self, query):
+        await self.chatbot.connect_to_server(server_script_path)
+        response = await self.chatbot.process_query(query)
+        return response
