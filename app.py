@@ -5,17 +5,6 @@ from src.graphiti.demo import GraphitiDemo
 
 demo = GraphitiDemo()
 
-# Function to handle file uploads
-def process_file(fileobj):
-    # Create a new event loop instead of trying to get the current one
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Run the async function and get the result
-    result = loop.run_until_complete(demo.process_file_upload(fileobj))
-    loop.close()
-    return result
-
 # Similar fix for the chat function
 def gradio_chat(user_query):
     loop = asyncio.new_event_loop()
@@ -26,7 +15,7 @@ def gradio_chat(user_query):
 
 # Create the chat interface
 chat_interface = gr.Interface(
-    fn=gradio_chat,
+    fn=demo.ask,
     inputs=gr.Textbox(label="Enter your question:"),
     outputs=gr.Textbox(label="Chatbot Response:"),
     title="Graphiti Chatbot",
@@ -35,7 +24,7 @@ chat_interface = gr.Interface(
 
 # Create the file upload interface
 file_interface = gr.Interface(
-    fn=process_file,
+    fn=demo.process_file_upload,
     inputs=gr.File(label="Upload a file"),
     outputs=gr.Textbox(label="File Processing Result:"),
     title="File Upload",

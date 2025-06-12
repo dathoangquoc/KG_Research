@@ -12,9 +12,6 @@ import asyncio
 from graphiti_core.nodes import EpisodeType
 from .setup_graphiti import setup_graphiti
 
-# Ollama
-import ollama
-
 # Custom modules
 from .document_processor import DocumentProcessor
 from .mcp_server import GraphitiServer
@@ -37,6 +34,9 @@ class GraphitiDemo:
             return "No file uploaded"
 
         try:
+            # Initialize the graph database with graphiti's indices. This only needs to be done once.
+            await self.graphiti.build_indices_and_constraints()
+
             # Copy file content
             file_name = os.path.basename(fileobj.name) 
             os.makedirs("./temps", exist_ok=True)
